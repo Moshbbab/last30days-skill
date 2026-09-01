@@ -176,6 +176,17 @@ python3 skills/last30days/scripts/last30days.py "MCP servers" \
 
 **X on cookie-less hosts.** Bird (the free X source) scrapes X using your logged-in browser cookies (`AUTH_TOKEN`/`CT0`), which agent hosts like OpenClaw, CI, or headless runs often can't supply — and scraping carries some account risk. On those, set `XQUIK_API_KEY` (or `XAI_API_KEY`) for full, ranked X coverage from a single API key: the same engagement-based ranking, first-party authorship, and handle (from/mentions) lanes the native X source gets. `--diagnose` reports whether the key is working (and flags an unpaid key).
 
+**Extra bird cookie lookups on Linux and Mac mini.** On a MacBook the X cookie path is unchanged (Firefox/Safari/Chrome extract, gated by `FROM_BROWSER`). On **extra hosts** the engine adds two more ways to hand bird a complete `auth_token`+`ct0` pair, tried in order (first COMPLETE pair wins; no half-pair merge; nothing is ever written to the `.env` and cookie values are never printed):
+
+1. an explicit env `AUTH_TOKEN`+`CT0` (never overwritten);
+2. the [`agentcookie`](https://github.com/) sidecar CLI — `agentcookie cookies --domain .x.com --json` — a soft dependency (absent = skipped; `AGENTCOOKIE=off` disables it) that delivers cookies on Linux, where the on-disk Chrome store can't be decrypted here;
+3. a live signed-in Chrome/Chromium session over the DevTools Protocol (`Network.getAllCookies`);
+4. the mainline browser extract, when `FROM_BROWSER` already lists a browser (on a Mac mini with a browser opted in, this native read runs *before* the CDP read).
+
+A host counts as an "extra host" when ANY of these hold: `AGENTCOOKIE=on` (explicit opt-in, any OS); the platform is Linux; a Darwin **Mac mini** (`sysctl -n hw.model` prefix `Macmini`); or a Darwin **agentcookie sink** role. The host is never inferred from the home directory, PATH, or Hermes/OpenClaw env — only those signals. A plain MacBook does no agentcookie spawn and opens no CDP socket unless `AGENTCOOKIE=on`.
+
+CDP endpoint resolution (extra hosts only, no port scan): `BROWSER_CDP_URL` if set, else port `18800` when it answers as Chrome, else `9222` + the X display number. Port `18800` is the last30days extras **NUX convention** — the agent launches a throwaway login Chrome with `SAND_CHROME_REMOTE_DEBUG_PORT=18800` (see SKILL.md's "X on Linux / Grok Bot / Mac mini"), so it is not confused with a daily Chrome profile on `9222`+display (box-chrome's own built-in default). `18800` is tried first but falls through when it yields no complete pair, so a logged-out Chrome there never shadows a logged-in profile; pin `BROWSER_CDP_URL` if a stale session answers there. A Node `--inspect` endpoint is rejected; a Chrome page target is required.
+
 **Example `.env` skeleton** (placeholders only - replace with your own values):
 
 ```bash
@@ -442,6 +453,8 @@ Every live run writes its JSON result to `~/.config/last30days/doctor-cache.json
 | `LAST30DAYS_DOCTOR_TTL` | Freshness window for `doctor --cached`, in **seconds**. Defaults to `900` (15 minutes). `0` makes every `--cached` call run live. |
 | `LAST30DAYS_DOCTOR_PROBE_TIMEOUT` | Per-source deadline (**seconds**) for `doctor --probe` live checks. Defaults to `10`. Caps each concurrent probe so a slow source cannot hang the command. |
 | `LAST30DAYS_X_BACKEND` | Pins the X backend (`bird` / `xai` / `xurl` / `xquik` / `grok`); doctor renders the pin and predicts "will use" accordingly. The unpinned auto chain is bird → xai → xurl → xquik (grok is opt-in only). Pin `grok` to enable it; a leftover `~/.grok/auth.json` is never auto-selected. |
+| `AGENTCOOKIE` | `on` opts any host (incl. a MacBook) into the extra bird cookie lookups (agentcookie sidecar + live Chrome CDP); `off` disables the agentcookie sidecar reader. Unset uses host detection (Linux / Mac mini / Darwin sink get the extras). See "Extra bird cookie lookups" above. |
+| `BROWSER_CDP_URL` | Explicit Chrome DevTools endpoint (e.g. `http://127.0.0.1:18800`) for the extra-host CDP cookie lookup. Preferred over the `18800` / `9222`+`$DISPLAY` defaults. Extra hosts only. |
 | `LAST30DAYS_REDDIT_BACKEND` | `scrapecreators` makes ScrapeCreators the primary Reddit backend; doctor renders Reddit's conditional routing with the pin applied. |
 | `LAST30DAYS_REDDIT_SC_MIN_ITEMS` | Integer thinness floor for ScrapeCreators Reddit **search** backfill. Default `0` = empty-only (free path keeps any non-empty result; no credit spend). Set above `0` to backfill when free yield is below that count; merged results dedupe by post id. Requires `SCRAPECREATORS_API_KEY`. Ignored when `LAST30DAYS_REDDIT_BACKEND=scrapecreators` (SC is already primary). |
 
